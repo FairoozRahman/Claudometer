@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Claudometer</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <span class="dot" id="dot">●</span>
+    <h1>Claudometer</h1>
+  </header>
+
+  <p class="status" id="status">Loading…</p>
+
+  <label class="row">
+    <span>Show floating HUD</span>
+    <input type="checkbox" id="hudToggle">
+  </label>
+
+  <label class="row">
+    <span>Run on all websites</span>
+    <input type="checkbox" id="allSitesToggle">
+  </label>
+  <p class="hint">
+    Off: the HUD only appears on claude.ai. On: Chrome will ask for
+    permission, then the HUD follows you to every site as a persistent
+    reading of your last known usage.
+  </p>
+  <p class="hint error hidden" id="allSitesError"></p>
+
+  <button class="btn" id="openClaude">Open claude.ai</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

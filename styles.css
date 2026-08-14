@@ -1,0 +1,503 @@
+/* Claudometer — injected into a closed shadow root, so nothing here can leak
+ * out into claude.ai and nothing from claude.ai can leak in. */
+
+:host {
+  all: initial;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.cm-root {
+  /* Page CSS can never reach inside the shadow root regardless, but !important
+   * here still guards against a stray rule of our own ever creeping in above
+   * this in the cascade — and matches the same hardening applied to the host
+   * element's inline style in content.js, which IS reachable from the page. */
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  isolation: isolate;
+  /* .cm-root itself is just a shrink-to-fit wrapper around whichever card is
+   * showing, but it doesn't hurt to be explicit: only the actual visible card
+   * should ever be able to intercept a click, never this wrapper. */
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  color: var(--fg);
+}
+
+/* ---------------------------------------------------------------- *
+ * Theme tokens
+ * ---------------------------------------------------------------- */
+
+.cm-root {
+  --alpha: 0.75;              /* spec: 75% default background opacity */
+  --blur: 8px;
+  --radius: 12px;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.cm-root.theme-dark {
+  --fg: #E8E6E3;
+  --muted: #9AA0A6;
+  --panel: rgba(24, 26, 28, var(--alpha));
+  --panel-solid: #181A1C;
+  --border: rgba(255, 255, 255, 0.12);
+  --track: rgba(255, 255, 255, 0.10);
+  --hover: rgba(255, 255, 255, 0.09);
+}
+
+.cm-root.theme-light {
+  --fg: #1F2937;
+  --muted: #6B7280;
+  --panel: rgba(252, 252, 250, var(--alpha));
+  --panel-solid: #FCFCFA;
+  --border: rgba(0, 0, 0, 0.10);
+  --track: rgba(0, 0, 0, 0.08);
+  --hover: rgba(0, 0, 0, 0.06);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Status palettes.
+ * --st-accent is the spec colour and drives bars, dots and icons in both
+ * themes. --st-text is the same colour on dark, but a darkened variant on
+ * light: #81C784 on #E8F5E9 is roughly 1.7:1 contrast and unreadable as text. */
+
+.cm-root.theme-dark.s-normal { --st-bg: rgba(42, 58, 46, var(--alpha));    --st-accent: #81C784; --st-text: #81C784; }
+.cm-root.theme-dark.s-warn   { --st-bg: rgba(58, 52, 40, var(--alpha));    --st-accent: #FFB74D; --st-text: #FFB74D; }
+.cm-root.theme-dark.s-crit   { --st-bg: rgba(61, 42, 42, var(--alpha));    --st-accent: #E57373; --st-text: #E57373; }
+.cm-root.theme-dark.s-off    { --st-bg: rgba(46, 46, 50, var(--alpha));    --st-accent: #B0BEC5; --st-text: #B0BEC5; }
+
+.cm-root.theme-light.s-normal { --st-bg: rgba(232, 245, 233, var(--alpha)); --st-accent: #81C784; --st-text: #2E7D32; }
+.cm-root.theme-light.s-warn   { --st-bg: rgba(255, 248, 225, var(--alpha)); --st-accent: #FFB74D; --st-text: #B26A00; }
+.cm-root.theme-light.s-crit   { --st-bg: rgba(255, 235, 238, var(--alpha)); --st-accent: #E57373; --st-text: #C62828; }
+.cm-root.theme-light.s-off    { --st-bg: rgba(236, 239, 241, var(--alpha)); --st-accent: #90A4AE; --st-text: #546E7A; }
+
+/* Per-section status modifiers (weekly cap can differ from session). */
+.sec.s-normal { --sec-accent: #81C784; }
+.sec.s-warn   { --sec-accent: #FFB74D; }
+.sec.s-crit   { --sec-accent: #E57373; }
+.theme-light .sec.s-normal { --sec-text: #2E7D32; }
+.theme-light .sec.s-warn   { --sec-text: #B26A00; }
+.theme-light .sec.s-crit   { --sec-text: #C62828; }
+.theme-dark  .sec.s-normal { --sec-text: #81C784; }
+.theme-dark  .sec.s-warn   { --sec-text: #FFB74D; }
+.theme-dark  .sec.s-crit   { --sec-text: #E57373; }
+
+/* ---------------------------------------------------------------- *
+ * Shared surface
+ * ---------------------------------------------------------------- */
+
+.glass {
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.hidden { display: none !important; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--st-accent);
+  outline-offset: 1px;
+}
+
+.ic {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 120ms ease, background-color 120ms ease, transform 100ms ease;
+}
+
+.ic:hover { opacity: 1; background: var(--hover); }
+.ic:active { transform: scale(0.9); }
+
+.cm-svg { display: block; }
+
+/* Refresh gets its own, larger, more prominent treatment — the reload icon
+ * used to be an 11px emoji glyph in an 18px box and was easy to miss. */
+.ic-refresh {
+  width: 30px;
+  height: 30px;
+  opacity: 0.85;
+}
+
+@keyframes cm-spin { to { transform: rotate(360deg); } }
+
+.ic.spinning .cm-svg { animation: cm-spin 650ms linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ic.spinning .cm-svg { animation: none; }
+}
+
+/* ---------------------------------------------------------------- *
+ * Compact HUD — ~140 x ~45
+ * ---------------------------------------------------------------- */
+
+.cm-compact {
+  width: 158px; /* was 140 — row 1's reset countdown needs the room; still within the ~140-160px allowance */
+  min-height: 45px;
+  padding: 5px 6px 5px 8px;
+  background: var(--st-bg);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  cursor: grab;
+  user-select: none;
+}
+
+.cm-compact:active { cursor: grabbing; }
+
+.c-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.c-row .spacer { flex: 1 1 auto; }
+
+.c-quota {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--st-text);
+}
+
+.c-used {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.c-metric {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.c-metric.pos { color: var(--st-text); }
+
+.c-offline {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--st-text);
+}
+
+.c-login {
+  font-size: 10px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.c-login:hover { background: var(--st-accent); color: var(--panel-solid); }
+
+/* ---------------------------------------------------------------- *
+ * Detail modal
+ * ---------------------------------------------------------------- */
+
+.cm-detail {
+  width: 296px;
+  background: var(--panel);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.d-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 8px 9px 12px;
+  background: var(--st-bg);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+.d-head:active { cursor: grabbing; }
+
+.d-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--st-text);
+  flex: 1 1 auto;
+}
+
+.d-body { padding: 4px 12px 10px; }
+
+.sec {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sec:last-child { border-bottom: 0; }
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.sec-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex: 1 1 auto;
+}
+
+.sec-pct {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--sec-text, var(--fg));
+}
+
+.tag {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--sec-text, var(--fg));
+  border: 1px solid var(--sec-accent, var(--border));
+  background: color-mix(in srgb, var(--sec-accent, transparent) 14%, transparent);
+}
+
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--sec-accent, var(--st-accent));
+  transition: width 420ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.rows { margin-top: 7px; display: grid; gap: 3px; }
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.row .k { color: var(--muted); flex: 1 1 auto; }
+.row .v { font-variant-numeric: tabular-nums; color: var(--fg); }
+.row .v.accent { color: var(--sec-text, var(--st-text)); font-weight: 600; }
+
+.big {
+  font-size: 17px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--st-text);
+}
+
+/* Settings */
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--muted);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.toggle input:checked {
+  background: var(--st-accent);
+  border-color: var(--st-accent);
+}
+
+.toggle input:checked::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3.5px;
+  height: 7.5px;
+  border: solid var(--panel-solid);
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+
+.toggle input:focus-visible {
+  outline: 2px solid var(--st-accent);
+  outline-offset: 2px;
+}
+
+/* Empty / offline / error states */
+
+.state {
+  padding: 22px 12px 24px;
+  text-align: center;
+}
+
+.state .emoji { font-size: 24px; display: block; margin-bottom: 8px; }
+
+.state .msg {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 4px;
+}
+
+.state .sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+
+.btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 8px;
+  background: var(--st-accent);
+  color: #14161A;
+  transition: filter 120ms ease;
+}
+
+.btn:hover { filter: brightness(1.08); }
+
+.btn.ghost {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.btn.ghost:hover { background: var(--hover); }
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 9px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.foot .spacer { flex: 1 1 auto; }
+
+.stale-chip {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+/* Restore nub, shown when the HUD is closed */
+
+.cm-nub {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  background: var(--st-bg);
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 140ms ease;
+}
+
+.cm-nub:hover { opacity: 1; }
+
+/* ---------------------------------------------------------------- *
+ * Tooltips
+ * ---------------------------------------------------------------- */
+
+/* Self-contained on purpose: .cm-tip is appended as a SIBLING of .cm-root
+ * (both are direct children of the shadow root, see mount() in content.js),
+ * not a descendant of it — so it never inherited .cm-root's --fg/--border/
+ * --shadow custom properties in the first place. Rather than restructure the
+ * DOM, each theme gets its own fully explicit palette here. */
+.cm-tip {
+  position: fixed;
+  z-index: 2147483647;
+  max-width: 240px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 130ms ease, transform 130ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.cm-tip.show { opacity: 1; transform: translateY(0); }
+
+.cm-tip.theme-dark {
+  background: rgba(22, 27, 34, 0.92);
+  color: #E6EDF3;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.cm-tip.theme-light {
+  background: rgba(255, 255, 255, 0.94);
+  color: #1F2328;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar > i, .cm-tip { transition: none; }
+}
