@@ -1,4 +1,8 @@
 # Claudometer
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/ikhopccampcjlpeefeckchichkfnlejl)](https://chromewebstore.google.com/detail/ikhopccampcjlpeefeckchichkfnlejl)
+<img width="1280" height="800" alt="claudometer-description" src="https://github.com/user-attachments/assets/6251b295-effd-49b7-8dfd-01a34b6981bf" />
+<img width="1280" height="800" alt="claudometer-ss-1" src="https://github.com/user-attachments/assets/bdcf30f0-92bd-4d9f-991d-a2dcb01673b4" />
+<img width="1280" height="800" alt="claudometer-ss-2" src="https://github.com/user-attachments/assets/9104365f-b3bd-47f0-af9e-d6fad6513535" />
 
 **Low-profile floating HUD & quota meter for Claude session limits and burn rates.**
 
