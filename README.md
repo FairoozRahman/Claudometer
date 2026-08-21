@@ -75,6 +75,10 @@ styles.css         HUD theme (dark/light, glassmorphism)
 icons/             Extension icons
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
