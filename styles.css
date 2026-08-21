@@ -373,6 +373,24 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+.sel {
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+.sel:hover { background: var(--track); }
+
+.sel:focus-visible {
+  outline: 2px solid var(--st-accent);
+  outline-offset: 1px;
+}
+
 /* Empty / offline / error states */
 
 .state {

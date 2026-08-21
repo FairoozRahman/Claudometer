@@ -27,8 +27,11 @@
     theme: 'dark',
     view: 'compact',
     pos: null,
-    allSites: false
+    allSites: false,
+    pollMinutes: 2
   };
+
+  const POLL_MINUTES_CHOICES = [1, 5, 10, 15, 30];
 
   // The static manifest entry only matches claude.ai; this script also runs
   // on every other site once popup.js registers it there (gated behind the
@@ -338,8 +341,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
     let { top, left } = settings.pos || {};
     if (!Number.isFinite(top) || !Number.isFinite(left)) {
+      // Default: top-right, just clear of the browser toolbar/bookmarks bar.
       left = window.innerWidth - w - 20;
-      top = window.innerHeight - h - 20;
+      top = 20;
     }
     shell.style.left = clamp(left, 4, Math.max(4, window.innerWidth - w - 4)) + 'px';
     shell.style.top = clamp(top, 4, Math.max(4, window.innerHeight - h - 4)) + 'px';
@@ -466,8 +470,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     const el = e.target;
     if (el.matches('[data-set]')) {
       const key = el.getAttribute('data-set');
-      settings[key] = el.checked;
-      send({ type: 'CM_SET_SETTINGS', patch: { [key]: el.checked } });
+      const value = el.tagName === 'SELECT' ? Number(el.value) : el.checked;
+      settings[key] = value;
+      send({ type: 'CM_SET_SETTINGS', patch: { [key]: value } });
       if (key === 'tooltips' && !el.checked) hideTip();
     }
   }
@@ -602,6 +607,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
         <input type="checkbox" data-set="alerts" ${settings.alerts ? 'checked' : ''}>
         <span>Desktop Alerts</span>
       </label>
+      <div class="row" style="margin-top:6px;align-items:center" data-tip="How often Claudometer polls claude.ai for a fresh reading. Shorter intervals notice changes sooner; longer intervals poll less often.">
+        <span class="k">Auto-Refresh</span>
+        <select class="sel" data-set="pollMinutes">
+          ${POLL_MINUTES_CHOICES.map(m => `<option value="${m}" ${Number(settings.pollMinutes) === m ? 'selected' : ''}>Every ${m} min${m === 1 ? '' : 's'}</option>`).join('')}
+        </select>
+      </div>
       <div class="row" style="margin-top:6px" data-tip="Chrome only grants site access from an extension's own popup, not from a page — open it via the toolbar icon to change this.">
         <span class="k">Runs on</span>
         <span class="v">${settings.allSites ? 'All websites' : 'Claude.ai only'} — toggle in toolbar</span>

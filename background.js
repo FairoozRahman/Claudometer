@@ -19,7 +19,8 @@
 const API_BASE = 'https://claude.ai/api';
 const LOGIN_URL = 'https://claude.ai/login';
 
-const POLL_MINUTES = 2;
+const POLL_MINUTES_DEFAULT = 2;
+const POLL_MINUTES_CHOICES = [1, 5, 10, 15, 30];
 const ALARM_POLL = 'claudometer:poll';
 
 const REQUEST_TIMEOUT_MS = 15000;
@@ -44,8 +45,14 @@ const DEFAULT_SETTINGS = {
   theme: 'dark',         // 'dark' | 'light'
   view: 'compact',       // 'compact' | 'detail' | 'hidden'
   pos: null,             // { top, left } in px, persisted across pages
-  allSites: false        // run the HUD on every site, not just claude.ai — set via popup.html
+  allSites: false,       // run the HUD on every site, not just claude.ai — set via popup.html
+  pollMinutes: POLL_MINUTES_DEFAULT  // auto-refresh interval, minutes
 };
+
+function normalizePollMinutes(v) {
+  const n = Number(v);
+  return POLL_MINUTES_CHOICES.includes(n) ? n : POLL_MINUTES_DEFAULT;
+}
 
 const ALL_SITES_ID = 'cm-all-sites';
 const ALL_SITES_PERM = { origins: ['<all_urls>'] };
@@ -625,14 +632,38 @@ async function commit(next, prevForCarryOver) {
  * wiring
  * ------------------------------------------------------------------ */
 
+/**
+ * (Re)creates the poll alarm if it is missing or its period no longer matches
+ * the saved setting — chrome.alarms has no "update period" call, so changing
+ * the interval means clearing and recreating it.
+ */
 async function ensureAlarm() {
+  const settings = await getSettings();
+  const period = normalizePollMinutes(settings.pollMinutes);
+
   const existing = await chrome.alarms.get(ALARM_POLL);
-  if (!existing) {
-    await chrome.alarms.create(ALARM_POLL, {
-      periodInMinutes: POLL_MINUTES,
-      delayInMinutes: 0.1
-    });
-  }
+  if (existing && existing.periodInMinutes === period) return;
+
+  await chrome.alarms.create(ALARM_POLL, {
+    periodInMinutes: period,
+    delayInMinutes: 0.1
+  });
+}
+
+/**
+ * Re-anchors the poll alarm a full interval out from right now. Without this,
+ * a manual refresh (or a tab regaining focus) just gets a fresh reading
+ * without disturbing the alarm's existing schedule — so the next automatic
+ * poll can still land moments later. chrome.alarms.create() with the same
+ * name always replaces the existing alarm, which is what makes "reset" work.
+ */
+async function restartAlarm() {
+  const settings = await getSettings();
+  const period = normalizePollMinutes(settings.pollMinutes);
+  await chrome.alarms.create(ALARM_POLL, {
+    periodInMinutes: period,
+    delayInMinutes: period
+  });
 }
 
 /**
@@ -725,7 +756,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
 
   if (msg.type === 'CM_REFRESH') {
-    poll('manual').then(() => sendResponse({ ok: true }));
+    poll('manual')
+      .then(() => restartAlarm())
+      .then(() => sendResponse({ ok: true }));
     return true;
   }
 
@@ -742,8 +775,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'CM_SET_SETTINGS') {
+    const patch = { ...msg.patch };
+    if ('pollMinutes' in patch) patch.pollMinutes = normalizePollMinutes(patch.pollMinutes);
+
     getSettings()
-      .then(s => set({ [K.settings]: { ...s, ...msg.patch } }))
+      .then(s => set({ [K.settings]: { ...s, ...patch } }))
+      .then(() => ('pollMinutes' in patch ? ensureAlarm() : null))
       .then(() => sendResponse({ ok: true }));
     return true;
   }

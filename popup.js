@@ -12,7 +12,7 @@
 
 const K = { settings: 'cm.settings', state: 'cm.state' };
 const DEFAULT_SETTINGS = {
-  tooltips: true, alerts: true, theme: 'dark', view: 'compact', pos: null, allSites: false
+  tooltips: true, alerts: true, theme: 'dark', view: 'compact', pos: null, allSites: false, pollMinutes: 2
 };
 const ALL_SITES_PERM = { origins: ['<all_urls>'] };
 const ALL_SITES_ID = 'cm-all-sites';
